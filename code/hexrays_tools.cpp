@@ -36,7 +36,7 @@ extern plugin_t PLUGIN;
 static bool inited = false;
 
 bool name_for_struct_crawler(vdui_t &vu, qstring & name, lvar_t ** out_var, ea_t * ea);
-bool set_lvar_type(vdui_t * vu, lvar_t *  lv, typestring * ts);
+bool set_lvar_type(vdui_t * vu, lvar_t *  lv, tinfo_t * ts);
 bool structs_with_this_size(asize_t size);
 
 /*
@@ -198,7 +198,7 @@ static cexpr_t *find_var(vdui_t &vu)
 }
 
 
-bool jumptype(typestring t, int offset, bool virtual_calls = false)
+bool jumptype(tinfo_t t, int offset, bool virtual_calls = false)
 {
 	while(t.is_ptr_or_array())
 		t.remove_ptr_or_array();
@@ -344,7 +344,7 @@ static void reset_alt_calls(ea_t ea)
 static const char reset_alt_idc_args[] = { VT_LONG, 0 };
 static error_t idaapi reset_alt_idc(idc_value_t *argv, idc_value_t *res)
 {
-	msg("reset_alt_idc is called with arg0=%x\n", argv[0].num);
+	msg("[Hexrays-Tools] reset_alt_idc is called with arg0=%x\n", argv[0].num);
 	reset_alt_calls(argv[0].num);
 	return eOk;
 }
@@ -353,7 +353,7 @@ static error_t idaapi reset_alt_idc(idc_value_t *argv, idc_value_t *res)
 static const char structs_of_size_args[] = { VT_LONG, 0 };
 static error_t idaapi structs_of_size(idc_value_t *argv, idc_value_t *res)
 {
-	msg("structs_of_size is called with arg0=%x\n", argv[0].num);
+	msg("[Hexrays-Tools] structs_of_size is called with arg0=%x\n", argv[0].num);
 	asize_t sz = argv[0].num;
 	structs_with_this_size(sz);
 	return eOk;
@@ -446,7 +446,7 @@ static bool idaapi add_VT_cref(void * ud)
 				flags_t flags = getFlags(fnc);
 				if (isFunc(flags))
 				{
-					msg("adding cref from %p to %p\n", caller_ea, fnc);
+					msg("[Hexrays-Tools] adding cref from %p to %p\n", caller_ea, fnc);
 					//add_cref(caller_ea, fnc, fl_CF);
 					set_call(caller_ea, fnc);
 					//n.altset(ea, callee+1);     // save the new address
@@ -553,7 +553,7 @@ bool show_VT_from_tid(tid_t id)
 							break;
 					}
 				}
-				fl.choose("virtual table");
+				fl.choose("[Hexrays-Tools] virtual table");
 				fl.open_pseudocode();
 
 				return true;
@@ -563,7 +563,7 @@ bool show_VT_from_tid(tid_t id)
 		member_t * member = get_member(struc, 0);
 		if(member)
 		{
-			typestring t;
+			tinfo_t t;
 			if( get_member_type(member, &t) )
 			{
 				tid_t child = get_struc_from_typestring(t);
@@ -588,7 +588,7 @@ static bool idaapi show_VT(void * ud)
 		if (e->op == cot_idx)
 			e = e->x;
 		cexpr_t * var = e->x;
-		typestring t = var->type;
+		tinfo_t t = var->type;
 		if(t.empty())
 		{			
 			return false;
@@ -725,10 +725,10 @@ struct offset_locator_t : public ctree_parentee_t
 						types[(int)delta] = t;
 						char buff[MAXSTR];
 						t.print(buff, sizeof(buff));
-						msg("new var: %s.%d [%s][array: %d]\n", (*lvars)[index].name.c_str(), (int)delta, buff, is_array);
+						msg("[Hexrays-Tools] new var: %s.%d [%s][array: %d]\n", (*lvars)[index].name.c_str(), (int)delta, buff, is_array);
 					}
 					else
-						msg("new var: %s.%d[array:%d]\n", (*lvars)[index].name.c_str(), (int)delta, is_array);
+						msg("[Hexrays-Tools] new var: %s.%d[array:%d]\n", (*lvars)[index].name.c_str(), (int)delta, is_array);
 				}
 			}
 		}
@@ -749,7 +749,7 @@ struct offset_locator_t : public ctree_parentee_t
 							cexpr_t * num = add->y;
 							if(idxs.find(var->v.idx)!=idxs.end() )
 							{
-								msg("var: %s.%d\n", (*lvars)[var->v.idx].name.c_str(), (int)num->numval());
+								msg("[Hexrays-Tools] var: %s.%d\n", (*lvars)[var->v.idx].name.c_str(), (int)num->numval());
 								offsets.insert((int)num->numval());
 								types[(int)num->numval()] = cast->type;
 							}
@@ -758,7 +758,7 @@ struct offset_locator_t : public ctree_parentee_t
 						{
 							if(&(*lvars)[var->v.idx] == var_hled)
 							{
-								msg("xvar: %s\n", (*lvars)[var->v.idx].name.c_str());
+								msg("[Hexrays-Tools] xvar: %s\n", (*lvars)[var->v.idx].name.c_str());
 							}
 						}
 					}
@@ -811,7 +811,9 @@ void idaapi get_type_line(void *obj,uint32 n,char * const *arrptr)
 	{
 		tid_t id = (*vec)[n-2];
 		asize_t size = get_struc_size(id);
-		get_struc_name(id, arrptr[0], MAXSTR);		
+		qstring tmpname;
+		get_struc_name(&tmpname, id);		
+		qsnprintf(arrptr[0], MAXSTR, "%s", tmpname.c_str());
 		qsnprintf(arrptr[1], MAXSTR, "%d", size);
 		qsnprintf(arrptr[2], MAXSTR, "0x%08x", size);
 	}	
@@ -938,8 +940,8 @@ tid_t create_VT_struc(ea_t VT_ea, char * name, uval_t idx = BADADDR, unsigned in
 		char * fncname = NULL;
 		if (isFunc(fnc_flags) /*&& has_user_name(fnc_flags)*/ )
 		{
-			if ( get_short_name(BADADDR, fncea,  funcname, sizeof(funcname)) )
-			//if(get_func_name(fncea, funcname, MAXSTR))
+			//if ( get_short_name(BADADDR, fncea,  funcname, sizeof(funcname)) )
+			if(get_func_name(fncea, funcname, MAXSTR))
 				fncname = funcname;
 		}		
 		add_struc_member(newstruc, NULL, offset, dwrdflag(), NULL, 4);
@@ -986,20 +988,20 @@ static bool create_VT(uval_t idx)
 	tid_t id = get_struc_by_idx( idx );
 	if (is_union(id))
 	{
-		msg("union!\n");
+		msg("[Hexrays-Tools] union!\n");
 		return false;
 	}
 
 	struc_t * struc = get_struc(id);
 	if(!struc)
 	{
-		msg("!struc\n");
+		msg("[Hexrays-Tools] !struc\n");
 		return false;
 	}
 
-	char name[MAXSTR];
-	memset(name, 0, sizeof(name));
-	get_struc_name(id, name, MAXSTR);
+	qstring tmpname;
+	get_struc_name(&tmpname, id);
+	char *name = qstrdup(tmpname.c_str());
 	qstrncat(name, "_VT", MAXSTR);
 
 	///---------------------
@@ -1011,7 +1013,7 @@ static bool create_VT(uval_t idx)
 	VT_ea = get_name_ea(BADADDR, name_VT);
 	if (VT_ea == BADADDR)
 	{
-		if (askaddr(&VT_ea,  "Gimme address of virtual function table")==0)
+		if (askaddr(&VT_ea,  "[Hexrays-Tools] Gimme address of virtual function table")==0)
 			return false;	
 	}
 
@@ -1104,11 +1106,11 @@ static void add_structures_popup_items(Controls::TCustomControl * cc)
 	//todo: replace this by calling ui_add_menu_item with SETMENU_CTXSTR flag
 	if (cc)
 	{
-		add_custom_viewer_popup_item(cc, "Extract object", "", extract_substruct_callback, NULL);
-		add_custom_viewer_popup_item(cc, "Unpack object", "", unpack_this_member_callback, NULL);
-		add_custom_viewer_popup_item(cc, "Which struct matches here?", "", which_struct_matches_here_callback, NULL);
-		add_custom_viewer_popup_item(cc, "Add to classes", "", add_to_classes_callback, NULL);
-		add_custom_viewer_popup_item(cc, "Add VT", "", create_VT_callback, NULL);
+		add_custom_viewer_popup_item(cc, "[Hexrays-Tools] Extract object", "", extract_substruct_callback, NULL);
+		add_custom_viewer_popup_item(cc, "[Hexrays-Tools] Unpack object", "", unpack_this_member_callback, NULL);
+		add_custom_viewer_popup_item(cc, "[Hexrays-Tools] Which struct matches here?", "", which_struct_matches_here_callback, NULL);
+		add_custom_viewer_popup_item(cc, "[Hexrays-Tools] Add to classes", "", add_to_classes_callback, NULL);
+		add_custom_viewer_popup_item(cc, "[Hexrays-Tools] Add VT", "", create_VT_callback, NULL);
 	}
 }
 
@@ -1270,19 +1272,19 @@ static bool idaapi var_testing2(void *ud)
 	if (!name_for_struct_crawler(vu, name, &lvar, &ea))
 		return false;
 
-	typestring type;
+	tinfo_t type;
 	strtype_info_v2_t sti;
 	if (!fi.to_type(name, type, &sti))
 		return false;
 	
 
 
-	typestring restype = make_pointer(type);
+	tinfo_t restype = make_pointer(type);
 	
 #if 1
 	std::for_each(fi.scanned_variables.begin(), fi.scanned_variables.end(), [&](std::pair<scanned_variables_t::key_type, scanned_variables_t::mapped_type> p)
 	{
-		typestring typ = restype;
+		tinfo_t typ = restype;
 		func_t * func = get_func(p.first);
 		if (!func)
 			return;
@@ -1317,7 +1319,7 @@ static bool idaapi var_testing2(void *ud)
 				}
 				else
 				{
-					typestring tt;
+					tinfo_t tt;
 					tt.clear();
 					
 					if (fi.types_cache.find(x.first) != fi.types_cache.end())
@@ -1393,7 +1395,7 @@ static bool idaapi remove_argument(void *ud)
 	if (vu.cfunc->entry_ea==BADADDR)
 		return false;
 
-	typestring type;
+	tinfo_t type;
 	qtype fields;	
 	if (!vu.cfunc->get_func_type(type, fields))
 		return false;
@@ -1500,7 +1502,7 @@ static bool idaapi convert_to_usercall(void *ud)
 		return false;
 	if ( vu.cfunc->entry_ea == BADADDR )
 		return false;
-	typestring type;
+	tinfo_t type;
 	qtype fields;		
 	if (!vu.cfunc->get_func_type(type, fields))
 		return false;
@@ -1538,7 +1540,7 @@ static bool new_structure_from_offset_locator(offset_locator_t &ifi, char name[M
 	struc_t * struc = get_struc(id);
 	if(!struc)
 	{
-		msg("failed to create new structure\n");
+		msg("[Hexrays-Tools] failed to create new structure\n");
 		pShouldReturn = true;
 		return false;
 	}
@@ -1579,10 +1581,12 @@ static bool new_structure_from_offset_locator(offset_locator_t &ifi, char name[M
 			err = add_struc_member(struc, NULL, offset, 0, NULL, 1);
 		}
 		if( err != 0)
-			msg("failed to add member at offset %d err %d\n", offset, err);
+			msg("[Hexrays-Tools] failed to add member at offset %d err %d\n", offset, err);
 	}
-	get_struc_name( id, name, MAXSTR );
-	msg("created struct %s\n", name);
+	qstring tmpname;
+	get_struc_name(&tmpname, id);
+	qstrncpy(name, tmpname.c_str(), MAXSTR);
+	msg("[Hexrays-Tools] created struct %s\n", name);
 	return false;
 }
 static bool idaapi traverse_(void *ud)
@@ -1646,12 +1650,12 @@ static bool idaapi traverse_(void *ud)
 
 	//int choosed = choose2((void *)&idcka, 3, widths, sizer, get_type_line, "possible types");
 
-	char name[MAXSTR];
+	qstring name;
 	if ( choosed > 1 )
 	{
-		get_struc_name( (idcka)[choosed-2], name, MAXSTR );
+		get_struc_name(&name, (idcka)[choosed-2]);
 
-		typestring ts = create_numbered_type_from_name(name);//create_typedef(name);		
+		typestring ts = create_numbered_type_from_name(name.c_str());//create_typedef(name);		
 		//var->set_lvar_type(make_pointer(ts));
 		//var->set_user_type();		
 		vu.set_lvar_type(var, make_pointer(ts));
@@ -1721,7 +1725,7 @@ static bool idaapi is_number(void *ud)
      -> y -> something with type B
 
 */
-static bool idaapi is_cast_assign(void *ud, typestring * ts)
+static bool idaapi is_cast_assign(void *ud, tinfo_t * ts)
 {
 	vdui_t &vu = *(vdui_t *)ud;
 	if (!vu.item.is_citem())
@@ -1814,7 +1818,7 @@ static bool idaapi is_vt_call_cast(void *ud, bool doit = false)
 	if(cast->op != cot_cast)
 		return false;
 
-	typestring t = memptr->x->type;
+	tinfo_t t = memptr->x->type;
 	if(!t.is_ptr())
 		return false;
 
@@ -1859,7 +1863,7 @@ C<char   __fastcall  (vdui_t *, lvar_t *, typestring *), 0x17097C10> do_set_lvar
 //typedef char  ( __fastcall  * do_set_lvar_type_t)(vdui_t *, lvar_t *, typestring *);
 //do_set_lvar_type_t do_set_lvar_type  = (do_set_lvar_type_t)0x17097C10;
 
-bool set_lvar_type(vdui_t * vu, lvar_t *  lv, typestring * ts)
+bool set_lvar_type(vdui_t * vu, lvar_t *  lv, tinfo_t * ts)
 {
 	
 	if(!(vu && lv && ts ))
@@ -1879,7 +1883,7 @@ bool set_lvar_type(vdui_t * vu, lvar_t *  lv, typestring * ts)
 static bool idaapi cast_assign(void *ud)
 {
 	vdui_t &vu = *(vdui_t *)ud;
-	typestring ts;
+	tinfo_t ts;
 	if(!is_cast_assign(ud, &ts))
 		return false;
 
@@ -1924,13 +1928,12 @@ static bool idaapi possible_structs_for_one_offset(void *ud)
 			m.idcka.push_back(id);
 		}
 	}
-	int choosed = m.choose("structs with offset");//choose((void *)&m, 40, matched_structs_sizer, matched_structs_get_type_line, "possible types");
-
-	char name[MAXSTR];
+	int choosed = m.choose("[Hexrays-Tools] structs with offset");//choose((void *)&m, 40, matched_structs_sizer, matched_structs_get_type_line, "possible types");
 
 	if ( choosed > 0 )
 	{
-		get_struc_name( m.idcka[choosed-1], name, MAXSTR );
+		qstring tmpname;
+		get_struc_name(&tmpname, m.idcka[choosed-1]);
 		//typestring ts = create_typedef(name);
 		//var->set_final_lvar_type(make_pointer(ts));
 		//var->set_lvar_type(make_pointer(ts));
@@ -1964,11 +1967,11 @@ bool structs_with_this_size(asize_t size)
 		}
 	}
 	//TODO: use another functions
-	int choosed = m.choose("structures of this size");//choose((void *)&m, 40, matched_structs_sizer, matched_structs_get_type_line, "possible types");
-	char name[MAXSTR];
+	int choosed = m.choose("[Hexrays-Tools] structures of this size");//choose((void *)&m, 40, matched_structs_sizer, matched_structs_get_type_line, "possible types");
+	qstring name;
 	if ( choosed > 0 )
 	{
-		get_struc_name( m.idcka[choosed-1], name, MAXSTR );
+		get_struc_name(&name, m.idcka[choosed-1]);
 		open_structs_window(m.idcka[choosed-1], 0);
 	}
 	return true; // done
@@ -2004,7 +2007,7 @@ void show_function_with_this_struct_tid_as_parameter(tid_t goal)
 	function_list fl;
 	if (goal == BADNODE)
 	{
-		msg("show_function_with_this_struct_tid_as_parameter, bad goal tid\n");
+		msg("[Hexrays-Tools] show_function_with_this_struct_tid_as_parameter, bad goal tid\n");
 		return;
 	}
 	show_wait_box("Scanning functions…");
@@ -2038,7 +2041,9 @@ void show_function_with_this_struct_tid_as_parameter(tid_t goal)
 	}
 	hide_wait_box();
 	char name[MAXNAMESIZE];
-	get_struc_name(goal, name, MAXNAMESIZE);
+	qstring tmpname;
+	get_struc_name(&tmpname, goal);
+	qstrncpy(name, tmpname.c_str(), MAXNAMESIZE);
 	fl.choose(name);
 	fl.open_pseudocode();
 }
@@ -2090,7 +2095,7 @@ static bool create_delphi_class(ea_t ea, bool force = true)
 	do_unknown_range(string_ea, len, DOUNK_SIMPLE );
 	if(!make_ascii_string(string_ea, used_sz+1, ASCSTR_PASCAL))
 	{
-		msg("could not make ascii string\n");	
+		msg("[Hexrays-Tools] could not make ascii string\n");	
 	}
 	qstrncat(name, "_", sizeof(name));
 	set_name(ea, name);
@@ -2260,18 +2265,18 @@ static int idaapi callback(void *, hexrays_event_t event, va_list va)
 							
 			if (can_be_converted_to_ptr2(vu, vu.item, nullptr) )
 			{
-				add_custom_viewer_popup_item(vu.ct, "scan variable", "S", var_testing, &vu);
-				add_custom_viewer_popup_item(vu.ct, "open structure builder", "", var_testing1_5, &vu);
-				add_custom_viewer_popup_item(vu.ct, "finalize structure", "", var_testing2, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] scan variable", "S", var_testing, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] open structure builder", "", var_testing1_5, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] finalize structure", "", var_testing2, &vu);
 			}
 
 			if (vu.item.citype == VDI_FUNC)
 			{
-				add_custom_viewer_popup_item(vu.ct, "Convert to __usercall", "", convert_to_usercall, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Convert to __usercall", "", convert_to_usercall, &vu);
 
 				//if (lvar->is_result_var())
 				{					
-					add_custom_viewer_popup_item(vu.ct, "Remove return type", "R", remove_rettype, &vu);
+					add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Remove return type", "R", remove_rettype, &vu);
 				}				
 			}
 
@@ -2280,40 +2285,40 @@ static int idaapi callback(void *, hexrays_event_t event, va_list va)
 				lvar_t * lvar =  vu.item.get_lvar();
 				if (lvar->is_arg_var())
 				{
-					add_custom_viewer_popup_item(vu.ct, "Remove this argument", "A", remove_argument, &vu);
+					add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Remove this argument", "A", remove_argument, &vu);
 				}
 			}
 
-			add_custom_viewer_popup_item(vu.ct, "recognize shape", "T", traverse_, &vu);
+			add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] recognize shape", "T", traverse_, &vu);
 			
-			add_custom_viewer_popup_item(vu.ct, "Jump to struct or virtual call", "J", jump_to_struct, &vu);
+			add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Jump to struct or virtual call", "J", jump_to_struct, &vu);
 
 			
 			if (is_virtual_call(&vu))
 			{
-				add_custom_viewer_popup_item(vu.ct, "Add virtual call cref", "", add_VT_cref, &vu);
-				add_custom_viewer_popup_item(vu.ct, "Show VT", "", show_VT, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Add virtual call cref", "", add_VT_cref, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Show VT", "", show_VT, &vu);
 			}
 
 			if (can_be_recast(&vu))
 			{
-				add_custom_viewer_popup_item(vu.ct, "Use NEGATIVE_CAST here", "D", change_negative_cast_callback, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Use NEGATIVE_CAST here", "D", change_negative_cast_callback, &vu);
 			}
 
 			if (is_cast_assign(&vu, NULL))
 			{
-				add_custom_viewer_popup_item(vu.ct, "recast item", "R", cast_assign, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] recast item", "R", cast_assign, &vu);
 			}
 
 			if (is_vt_call_cast(&vu, NULL))
 			{
-				add_custom_viewer_popup_item(vu.ct, "recast item", "R", vt_call_cast, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] recast item", "R", vt_call_cast, &vu);
 			}
 
 			if (is_number(&vu))
 			{
-				add_custom_viewer_popup_item(vu.ct, "Which structs have this offset?", "", possible_structs_for_one_offset, &vu);
-				add_custom_viewer_popup_item(vu.ct, "Which structs have this size?", "", structs_with_this_size, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Which structs have this offset?", "", possible_structs_for_one_offset, &vu);
+				add_custom_viewer_popup_item(vu.ct, "[Hexrays-Tools] Which structs have this size?", "", structs_with_this_size, &vu);
 			}
 
 		}
@@ -2496,13 +2501,13 @@ int idaapi init(void)
 
 	install_hexrays_callback(callback, NULL);
 	const char *hxver = get_hexrays_version();
-	msg("Hex-rays version %s has been detected, %s ready to use\n", hxver, PLUGIN.wanted_name);
+	msg("[Hexrays-Tools] Hex-rays version %s has been detected, %s ready to use\n", hxver, PLUGIN.wanted_name);
 	hook_to_notification_point(HT_UI, ui_callback, NULL);	
 	hook_to_notification_point(HT_IDB, idb_callback, NULL);
 	inited = true;
-	add_menu_item("Edit/Structs/Create struct from data...", "Create Delphi class", "", SETMENU_INS, create_delphi_class_callback, NULL);
-	add_menu_item("View/Graphs/Flow Chart", "Show structures graph", "", SETMENU_INS, show_struct_graph, NULL);
-	add_menu_item("View/Open subviews/Problems", "Classes", "", SETMENU_APP, show_classes_view, NULL);	
+	add_menu_item("Edit/Structs/Create struct from data...", "[Hexrays-Tools] Create Delphi class", "", SETMENU_INS, create_delphi_class_callback, NULL);
+	add_menu_item("View/Graphs/Flow Chart", "[Hexrays-Tools] Show structures graph", "", SETMENU_INS, show_struct_graph, NULL);
+	add_menu_item("View/Open subviews/Problems", "[Hexrays-Tools] Classes", "", SETMENU_APP, show_classes_view, NULL);	
 	
 
 	register_idc_functions();
@@ -2527,9 +2532,9 @@ void idaapi term(void)
 	if ( inited )
 	{
 		// clean up
-		del_menu_item("View/Graphs/Show structures graph");
-		del_menu_item("View/Open subviews/Classes");
-		del_menu_item("Edit/Structs/Create Delphi class");
+		del_menu_item("View/Graphs/[Hexrays-Tools] Show structures graph");
+		del_menu_item("View/Open subviews/[Hexrays-Tools] Classes");
+		del_menu_item("Edit/Structs/[Hexrays-Tools] Create Delphi class");
 		remove_hexrays_callback(callback, NULL);
 		
 		unhook_from_notification_point(HT_UI, ui_callback, NULL);
@@ -2549,7 +2554,7 @@ void idaapi run(int)
 }
 
 //--------------------------------------------------------------------------
-static char comment[] = "Milan's useful functions plugin for Hex-Rays decompiler";
+static char comment[] = "\n[Hexrays-Tools] Milan's useful functions plugin for Hex-Rays decompiler";
 
 //--------------------------------------------------------------------------
 //
@@ -2567,6 +2572,6 @@ plugin_t PLUGIN =
 	// it could appear in the status line
 	// or as a hint
 	"",                   // multiline help about the plugin
-	"Milan's hexrays tools collection", // the preferred short name of the plugin
+	"\n[Hexrays-Tools] Milan's hexrays tools collection", // the preferred short name of the plugin
 	""                    // the preferred hotkey to run the plugin
 };

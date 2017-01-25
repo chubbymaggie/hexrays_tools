@@ -153,7 +153,7 @@ bool fill_graphreferences()
 				}
 
 				{
-					typestring t;
+					tinfo_t t;
 					if(get_member_type(member, &t))
 					{
 						tid_t referenced = get_struc_from_typestring(t);
@@ -175,7 +175,7 @@ bool fill_graphreferences()
 	
 	fill_nonempty();
 	DWORD t2 = GetTickCount();
-	msg("%d graphreferences refreshed in %d ms\n", graph_references.size(), t2 - t1);
+	msg("[Hexrays-Tools] %d graphreferences refreshed in %d ms\n", graph_references.size(), t2 - t1);
 	cache_dirty = false;
 	return true;
 }
@@ -308,7 +308,7 @@ bool fill_backreferences_()
 		again_counter++;
 	} while(again);
 	DWORD t3 = GetTickCount();
-	msg("backreferences refreshed in %d ms, expand took %d ms, again counter: %d\n", t3 - t1, t3-t2, again_counter);
+	msg("[Hexrays-Tools] backreferences refreshed in %d ms, expand took %d ms, again counter: %d\n", t3 - t1, t3-t2, again_counter);
 	cache_dirty = false;
 	return true;
 }
@@ -501,7 +501,9 @@ bool find_negative_struct_cast_parent(tid_t child_id, asize_t offset, char * par
 
 		if (find_negative_struct_cast_parent_r(struc_candidate, child_id, offset))
 		{
-			get_struc_name(id, parent_name, parent_name_len);
+			qstring tmpname;
+			get_struc_name(&tmpname, id);
+			qstrncpy(parent_name, tmpname.c_str(), parent_name_len);
 			return true;
 		}
 	}	
@@ -540,7 +542,7 @@ bool can_be_recast(void * ud)
 	if(var->op != cot_var || num->op != cot_num)
 		return false;
 	
-	typestring vartype = var->type;
+	tinfo_t vartype = var->type;
 	if (!vartype.is_ptr())
 		return false;
 	vartype.remove_ptr_or_array();
@@ -583,10 +585,10 @@ void convert_test(cexpr_t *e)
 			int mem_ptr_offset = 0;
 
 
-			typestring vartype = var->type;
+			tinfo_t vartype = var->type;
 
 			int offset = num->numval();
-			typestring t;
+			tinfo_t t;
 			negative_cast_t * cache = find_cached_cast(vartype, offset);
 			if (cache)
 			{
@@ -618,10 +620,10 @@ void convert_test(cexpr_t *e)
 						if( ! parent_struc )
 							continue;
 
-						char parent_struc_name[MAXSTR];
-						get_struc_name(parent_struc_tid, parent_struc_name, MAXSTR);
+						qstring parent_struc_name;
+						get_struc_name(&parent_struc_name, parent_struc_tid);
 						
-						t = make_pointer( create_numbered_type_from_name(parent_struc_name) );
+						t = make_pointer(create_numbered_type_from_name(parent_struc_name.c_str()));
 						//t = make_pointer( create_typedef(parent_struc_name) );								
 						mem_ptr_offset = vec[i].offset - offset;
 						mem_ptr = mem_ptr_offset != 0;
@@ -640,10 +642,10 @@ void convert_test(cexpr_t *e)
 				}
 				if(!found)
 				{
-					char var_struct_name[MAXNAMELEN];
-					get_struc_name(var_struct_id, var_struct_name, MAXNAMELEN);
+					qstring var_struct_name;
+					get_struc_name(&var_struct_name, var_struct_id);
 
-					msg("negative casts: !find_negative_struct_cast_parent: %s, offset: %d\n", var_struct_name, offset);
+					msg("[Hexrays-Tools] negative casts: !find_negative_struct_cast_parent: %s, offset: %d\n", var_struct_name.c_str(), offset);
 					return;
 				}
 			}			
@@ -738,7 +740,7 @@ bool idaapi change_negative_cast_callback(void *ud)
 		return false;
 	cexpr_t *e = vu.item.e;
 
-	typestring from;
+	tinfo_t from;
 	int offset = 0;
 
 	if (e->op == cot_helper)
@@ -804,7 +806,7 @@ bool idaapi change_negative_cast_callback(void *ud)
 	char declaration[MAXSTR];
 	char * answer;
 
-	while(answer = askstr(HIST_TYPE, definition, "Gimme new negative cast type"))
+	while(answer = askstr(HIST_TYPE, definition, "[Hexrays-Tools] Gimme new negative cast type"))
 	{
 		qstrncpy(declaration, answer, MAXSTR);
 		//notice:

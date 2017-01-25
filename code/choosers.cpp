@@ -40,10 +40,11 @@ void idaapi matched_structs_with_offsets::get_type_line(void *obj,uint32 n,char 
 		member_t * member = 0;
 		if(struct_get_member(get_struc(id), ms.offset, &member) && member)
 		{
-			typestring type;
+			//typestring type;
+			tinfo_t type;
 			if(get_member_type(member, &type))
 			{
-				type.print(type_str, MAXSTR);
+				type.print(new qstring(type_str));
 			}
 		}
 		qstpncpy(arrptr[0],  name, MAXSTR);
@@ -66,14 +67,14 @@ char * idaapi matched_structs::get_type_line(void *obj, uint32 n, char *buf)
 		qstpncpy( buf, "type", MAXSTR );
 	else
 	{
-		char name[MAXSTR];
-		name[0]=0;
+		qstring name;
+;
 		tid_t id =  ms.idcka[n-1];
 		struc_t * struc = get_struc(id);
 		if (struc)
-			get_struc_name(id, name, sizeof(name));
+			get_struc_name(&name, id);
 		//asize_t size = get_struc_size(id);
-		qsnprintf(buf, MAXSTR, "%s", name);
+		qsnprintf(buf, MAXSTR, "%s", name.c_str());
 	}
 	return buf;
 }
@@ -105,8 +106,8 @@ void idaapi function_list::get_line(void *obj,uint32 n,char * const *arrptr)
 
   ea_t ea = ms.functions[n-1];
   qsnprintf(arrptr[0], MAXSTR, "%08a", ea);
-  //get_func_name(ea, arrptr[1], MAXSTR);
-  get_short_name(BADADDR, ea, arrptr[1], MAXSTR);
+  get_func_name(ea, arrptr[1], MAXSTR);
+  //get_short_name(BADADDR, ea, arrptr[1], MAXSTR);
   //get_demangled_name(BADADDR, ea,  arrptr[1], MAXSTR, inf.long_demnames, DEMNAM_NAME, 0);
   func_t * f = get_func(ea);
   if(f)

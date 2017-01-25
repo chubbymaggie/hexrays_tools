@@ -11,9 +11,9 @@
 
 #include "helpers.h"
 
-tid_t get_struc_from_typestring_my(typestring t)
+tid_t get_struc_from_typestring_my(tinfo_t t)
 {
-	typestring tmp = t;
+	tinfo_t tmp = t;
 	//until I get better solution, compile this with /EHsa
 	try
 	{
@@ -25,13 +25,13 @@ tid_t get_struc_from_typestring_my(typestring t)
 	catch( char * ex)
 	{
 		t = tmp;
-		while(t.length()>0 && t[0]!='=')
-			t = t.substr(1);
+		while(t.get_size() > 0);
+			//t = t.substr(1);
 	}
 
 	if ( t.is_struct() )
 	{	
-		const type_t * ptr = &t[1];
+		const type_t * ptr = (type_t*)t.get_realtype();
 		/*
 		if ( get_dt(ptr) != 0 )
 		return BADNODE; // this is an inplace definition, fail
@@ -43,8 +43,8 @@ tid_t get_struc_from_typestring_my(typestring t)
 		return import_type(idati, -1, name);
 	}
 	{
-		char temp[MAXSTR];
-		t.print(temp, MAXSTR);
+		qstring temp;
+		t.print(&temp);
 		//msg("get_struc_from_typestring: %s\n", tmp);
 		//QASSERT(112, false);
 	}
@@ -89,9 +89,9 @@ int get_idx_of_lvar(vdui_t &vu, lvar_t *lvar)
 	return get_idx_of(vu.cfunc->get_lvars(), lvar);
 }
 
-typestring create_numbered_type_from_name(const char * name)
+tinfo_t create_numbered_type_from_name(const char * name)
 {
-	typestring out_type;
+	tinfo_t out_type;
 	int32 ord = get_type_ordinal(idati, name);
 	char ordname[32];
 	memset(ordname, 0, sizeof(ordname));

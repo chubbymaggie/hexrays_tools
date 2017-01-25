@@ -1,4 +1,5 @@
 #pragma once
+#include "typestring.h"
 #include <pro.h>
 
 struct meminfo_v2_t 
